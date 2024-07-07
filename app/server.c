@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #define PORT "4221"
+#define OK "HTTP/1.1 200 OK\r\n\r\n"
 #define BACKLOG 5
 
 
@@ -89,10 +90,17 @@ int main(void)
         client_fd = accept(server_fd, (struct sockaddr *) &client_addr, &client_addr_size);
         if (client_fd == -1) {
             printf("accept error: %s", strerror(errno));
-        } else {
-            inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *) &client_addr), address, sizeof address);
-            printf("New TCP connection from %s\n", address);
+            continue;
         }
+
+        inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *) &client_addr), address, sizeof address);
+        printf("New TCP connection from %s\n", address);
+
+        if (send(client_fd, OK, strlen(OK), 0) == -1)
+        {
+            printf("send error %s\n", strerror(errno));
+        }
+
         close(client_fd);
         break;
     }
