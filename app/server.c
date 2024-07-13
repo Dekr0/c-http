@@ -177,7 +177,7 @@ int main(void)
                {
                    strcat(raw_response, HTTP_200);
                    strcat(raw_response, "\r\n");
-                   if (send(client_fd, HTTP_200, sizeof HTTP_200, 0) == -1)
+                   if (send(client_fd, raw_response, strlen(raw_response), 0) == -1)
                    {
                        printf("send HTTP_200 error %s\n", strerror(errno));
                    }
