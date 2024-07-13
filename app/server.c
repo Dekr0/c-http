@@ -173,6 +173,8 @@ int main(void)
                assert(!get_request_method(&req, raw_request, method, sizeof method));
                assert(!get_request_uri(&req, raw_request, uri, sizeof uri));
 
+               printf("%s\n", raw_request);
+
                if (!strcmp(uri, "/"))
                {
                    strcat(raw_response, HTTP_200);
