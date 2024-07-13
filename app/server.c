@@ -184,7 +184,7 @@ int main(void)
                    size_t write_cursor = 0;
 
                    char content_type_header[128];
-                   sprintf(content_type_header, "Content-Lenght: %zu\r\n\r\n", echo_length);
+                   sprintf(content_type_header, "Content-Length: %zu\r\n\r\n", echo_length);
 
                    sprintf(raw_response, "%s", HTTP_200);
                    write_cursor += strlen(HTTP_200);
