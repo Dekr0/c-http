@@ -25,7 +25,7 @@
 
 #define CONTENT_TYPE_PLAIN_TEXT "Content-Type: text/plain\r\n"
 
-#define HTTP_200 "HTTP/1.1 200 OK\r\n\r\n"
+#define HTTP_200 "HTTP/1.1 200 OK\r\n"
 #define HTTP_404 "HTTP/1.1 404 Not Found\r\n\r\n"
 
 

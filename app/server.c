@@ -175,6 +175,8 @@ int main(void)
 
                if (!strcmp(uri, "/"))
                {
+                   strcat(raw_response, HTTP_200);
+                   strcat(raw_response, "\r\n");
                    if (send(client_fd, HTTP_200, sizeof HTTP_200, 0) == -1)
                    {
                        printf("send HTTP_200 error %s\n", strerror(errno));
@@ -186,23 +188,17 @@ int main(void)
                    char content_type_header[128];
                    sprintf(content_type_header, "Content-Length: %zu\r\n\r\n", echo_length);
 
-                   sprintf(raw_response, "%s", HTTP_200);
-                   write_cursor += strlen(HTTP_200);
+                   strcat(raw_response, HTTP_200);
+                   strcat(raw_response, CONTENT_TYPE_PLAIN_TEXT);
+                   strcat(raw_response, content_type_header);
+                   strcat(raw_response, uri + 6);
 
-                   sprintf(raw_response + write_cursor, "%s", CONTENT_TYPE_PLAIN_TEXT);
-                   write_cursor += strlen(CONTENT_TYPE_PLAIN_TEXT);
-
-                   sprintf(raw_response + write_cursor, "%s", content_type_header);
-                   write_cursor += strlen(content_type_header);
-
-                   sprintf(raw_response + write_cursor, "%s", uri + 6);
-
-                   if (send(client_fd, raw_response, strlen(raw_response), 0))
+                   if (send(client_fd, raw_response, strlen(raw_response), 0) == -1)
                    {
                        printf("send response error %s\n", strerror(errno));
                    }
                } else {
-                   if (send(client_fd, HTTP_404, sizeof HTTP_404, 0))
+                   if (send(client_fd, HTTP_404, sizeof HTTP_404, 0) == -1)
                    {
                        printf("send HTTP_404 error %s\n", strerror(errno));
                    }
