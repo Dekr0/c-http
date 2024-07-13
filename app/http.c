@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "http.h"
 
@@ -18,7 +19,7 @@ int get_request_method(
         return 1;
     }
 
-    for (size_t i = 0; i <= r->method.end - r->method.start; i++)
+    for (unsigned short i = 0; i <= r->method.end - r->method.start; i++)
     {
         method[i] = raw_request_buffer[r->method.start + i];
     }
@@ -41,7 +42,7 @@ int get_request_uri(
         return 1;
     }
     
-    for (size_t i = 0; i <= r->uri.end - r->uri.start; i++)
+    for (unsigned short i = 0; i <= r->uri.end - r->uri.start; i++)
     {
         uri[i] = raw_request_buffer[r->uri.start + i];
     }
@@ -49,6 +50,57 @@ int get_request_uri(
     return 0;
 }
 
+int get_header(
+        struct http_request *r,
+        const char *raw_request_buffer,
+        const char *header_name,
+        char *header_value,
+        const size_t size
+        )
+{
+    struct http_request_header_slice *h;
+    unsigned short header_name_len;
+    unsigned short header_value_len;
+    int matched;
+    unsigned char i, j;
+    for (i = 0; i < r->num_headers; i++)
+    {
+        matched = 1;
+        h = &r->headers[i];
+        header_name_len= h->header_name.end - h->header_name.start + 1;
+
+        if (strlen(header_name) != header_name_len) continue;
+
+        for (j = 0; j < strlen(header_name); j++)
+        {
+            if (header_name[j] != raw_request_buffer[h->header_name.start + j])
+            {
+                matched = 0;
+                break;
+            }
+        }
+
+        if (!matched) continue;
+
+        header_value_len = h->header_value.end - h->header_value.start;
+
+        if (size < header_value_len)
+        {
+            printf("Given header value buffer is smaller than the occupied buffer");
+            return -1;
+        }
+
+        for (j = 0; j <= header_value_len; j++)
+        {
+            header_value[j] = raw_request_buffer[h->header_value.start + j];
+        }
+        return 1;
+    }
+
+    printf("%s header not found\n", header_name);
+
+    return -1;
+}
 
 void print_http_request_state(struct http_request *r, const char *b)
 {

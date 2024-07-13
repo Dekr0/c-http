@@ -63,6 +63,8 @@ struct http_header
 
 int get_request_method(struct http_request *, const char *, char *, size_t);
 
+int get_header(struct http_request *, const char *, const char *, char *, const size_t);
+
 int get_request_uri(struct http_request *, const char *, char *, size_t);
 
 void print_http_request(struct http_request *, const char *b);

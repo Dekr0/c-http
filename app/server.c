@@ -185,13 +185,30 @@ int main(void)
                    size_t echo_length = req.uri.end - req.uri.start - 5;
                    size_t write_cursor = 0;
 
-                   char content_type_header[128];
+                   char content_type_header[64];
                    sprintf(content_type_header, "Content-Length: %zu\r\n\r\n", echo_length);
 
                    strcat(raw_response, HTTP_200);
                    strcat(raw_response, CONTENT_TYPE_PLAIN_TEXT);
                    strcat(raw_response, content_type_header);
                    strcat(raw_response, uri + 6);
+
+                   if (send(client_fd, raw_response, strlen(raw_response), 0) == -1)
+                   {
+                       printf("send response error %s\n", strerror(errno));
+                   }
+               } else if (!strcmp(uri, "/user-agent")) {
+                   char user_agent[64];
+                   char content_type_header[64];
+                   rcode = get_header(&req, raw_request, "User-Agent", user_agent, 32);
+                   if (!rcode) break;
+
+                   sprintf(content_type_header, "Content-Length: %zu\r\n\r\n", strlen(user_agent));
+
+                   strcat(raw_response, HTTP_200);
+                   strcat(raw_response, CONTENT_TYPE_PLAIN_TEXT);
+                   strcat(raw_response, content_type_header);
+                   strcat(raw_response, user_agent);
 
                    if (send(client_fd, raw_response, strlen(raw_response), 0) == -1)
                    {
