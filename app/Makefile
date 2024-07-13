@@ -1,2 +1,2 @@
 all: server.c
-	gcc -Wall -O3 server.c -o server
+	gcc -O0 -g server.c ip.c http_parser.c http.c -o server
