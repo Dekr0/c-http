@@ -6,7 +6,7 @@
 
 int get_request_method(
         struct http_request *r, 
-        const char *b, 
+        const char *raw_request_buffer, 
         char *method,
         size_t size)
 {
@@ -20,7 +20,7 @@ int get_request_method(
 
     for (size_t i = 0; i <= r->method.end - r->method.start; i++)
     {
-        method[i] = b[r->method.start + i];
+        method[i] = raw_request_buffer[r->method.start + i];
     }
 
     return 0;
@@ -28,7 +28,7 @@ int get_request_method(
 
 int get_request_uri(
         struct http_request *r,
-        const char *b,
+        const char *raw_request_buffer,
         char *uri,
         size_t size
         )
@@ -43,7 +43,7 @@ int get_request_uri(
     
     for (size_t i = 0; i <= r->uri.end - r->uri.start; i++)
     {
-        uri[i] = b[r->uri.start + i];
+        uri[i] = raw_request_buffer[r->uri.start + i];
     }
     
     return 0;

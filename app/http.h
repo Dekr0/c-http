@@ -4,7 +4,8 @@
 
 #include <stdlib.h>
 
-#define HTTP_REQUEST_SIZE  8192 // Can be extended
+#define HTTP_REQUEST_HEADER_SIZE  4096 // Can be extended
+#define HTTP_RESPONSE_SIZE 4096
 
 #define HTTP_STATE_START        0
 #define HTTP_STATE_METHOD       1
@@ -22,20 +23,22 @@
 #define CR "\r"
 #define LF "\r"
 
+#define CONTENT_TYPE_PLAIN_TEXT "Content-Type: text/plain\r\n"
+
 #define HTTP_200 "HTTP/1.1 200 OK\r\n\r\n"
 #define HTTP_404 "HTTP/1.1 404 Not Found\r\n\r\n"
 
 
-struct http_slice 
+struct http_request_slice 
 {
     unsigned short start;
     unsigned short end;
 };
 
-struct http_headers
+struct http_request_header_slice
 {
-    struct http_slice header_name;
-    struct http_slice header_value;
+    struct http_request_slice header_name;
+    struct http_request_slice header_value;
 };
 
 struct http_request
@@ -47,9 +50,15 @@ struct http_request
     unsigned char version_major; // 8
     unsigned char version_minor; // 8
     unsigned char num_headers; // 8
-    struct http_slice method; // 32
-    struct http_slice uri; // 32
-    struct http_headers headers[HTTP_MAX_HEADERS]; 
+    struct http_request_slice method; // 32
+    struct http_request_slice uri; // 32
+    struct http_request_header_slice headers[HTTP_MAX_HEADERS]; 
+};
+
+struct http_header
+{
+    char header_name[64];
+    char header_value[64];
 };
 
 int get_request_method(struct http_request *, const char *, char *, size_t);

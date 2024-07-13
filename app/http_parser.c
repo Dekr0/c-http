@@ -31,7 +31,7 @@ const char http_token[256] = {
  */
 void parse_http_request(
         struct http_request *req,
-        const char *buffer,
+        const char *raw_request_buffer,
         size_t buffer_size,
         size_t buffer_cap
         )
@@ -40,7 +40,7 @@ void parse_http_request(
     char c;
     while (req->lead < buffer_size)
     {
-        c = buffer[req->lead];
+        c = raw_request_buffer[req->lead];
 #ifdef DEBUG
         printf("At state %d: tokenizing pos %d (v = %d)\n", req->__state, req->lead,
                 buffer[req->lead]);
@@ -132,43 +132,43 @@ void parse_http_request(
                     size_t i = 0;
                     for ( ; i < sizeof(http_version_prefix); i++)
                     {
-                        if (buffer[req->tail + i] != http_version_prefix[i])
+                        if (raw_request_buffer[req->tail + i] != http_version_prefix[i])
                         {
                             printf("At state %d: bad HTTP Version token at pos %d (v = %d)\n", 
-                                    req->__state, req->tail + i, buffer[req->tail + i]);
+                                    req->__state, req->tail + i, raw_request_buffer[req->tail + i]);
                             req->status = -1;
                             return;
                         }
                     }
 
-                    if (buffer[req->tail + i] < 48 || buffer[req->tail + i] > 57)
+                    if (raw_request_buffer[req->tail + i] < 48 || raw_request_buffer[req->tail + i] > 57)
                     {
                         printf("At state %d: bad HTTP Version digit token at pos %d (v = %d)\n", 
-                                req->__state, req->tail + i, buffer[req->tail + i]);
+                                req->__state, req->tail + i, raw_request_buffer[req->tail + i]);
                         req->status = -1;
                         return;
                     }
 
-                    req->version_major = buffer[req->tail + i] - 48;
+                    req->version_major = raw_request_buffer[req->tail + i] - 48;
                     i++;
 
-                    if (buffer[req->tail + i] != '.')
+                    if (raw_request_buffer[req->tail + i] != '.')
                     {
                         printf("At state %d: bad HTTP Version token at pos %d (v = %d)\n", 
-                                req->__state, req->tail + i, buffer[req->tail + i]);
+                                req->__state, req->tail + i, raw_request_buffer[req->tail + i]);
                         req->status = -1;
                         return;
                     }
                     i++;
 
-                    if (buffer[req->tail + i] < 48 || buffer[req->tail + i] > 57)
+                    if (raw_request_buffer[req->tail + i] < 48 || raw_request_buffer[req->tail + i] > 57)
                     {
                         printf("At state %d: bad HTTP Version digit token at pos %d (v = %d)\n", 
-                                req->__state, req->tail + i, buffer[req->tail + i]);
+                                req->__state, req->tail + i, raw_request_buffer[req->tail + i]);
                         req->status = -1;
                         return;
                     }
-                    req->version_minor = buffer[req->tail + i] - 48;
+                    req->version_minor = raw_request_buffer[req->tail + i] - 48;
                     i++;
 
                     if (c == '\r')
@@ -279,7 +279,7 @@ void parse_http_request(
                 {
                     size_t i = req->lead - 1;
                     while (i >= req->tail && 
-                           (buffer[i] == ' ' || buffer[i] == '\t'))
+                           (raw_request_buffer[i] == ' ' || raw_request_buffer[i] == '\t'))
                     {
                         i--;
                     }

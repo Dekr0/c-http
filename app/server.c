@@ -19,11 +19,6 @@
 #define READ_SIZE 1024
 
 
-struct http_handler_ctx
-{
-};
-
-
 int main(void)
 {
     int rcode;
@@ -94,26 +89,34 @@ int main(void)
     char *recv_buffer = malloc(READ_SIZE * sizeof(char));
     if (recv_buffer == NULL)
     {
-        printf("read_buffer malloc() error\n");
+        printf("recv_buffer malloc() error\n");
         return -1;
     }
-    char *buffer = malloc(HTTP_REQUEST_SIZE * sizeof(char));
-    if (buffer == NULL)
+    char *raw_request = malloc(HTTP_REQUEST_HEADER_SIZE * sizeof(char));
+    if (raw_request == NULL)
     {
-        printf("http_request malloc() error\n");
+        printf("raw_request malloc() error\n");
         return -1;
     }
-    size_t buffer_size = HTTP_REQUEST_SIZE * sizeof(char);
+    char *raw_response = malloc(HTTP_RESPONSE_SIZE * sizeof(char));
+    if (raw_response == NULL)
+    {
+        printf("raw_response malloc() error\n");
+        return -1;
+    }
 
 
     /** HTTP Request State and Metadata */
     struct http_request req = { 0 };
     int bytes_recv = 0;
     size_t bytes_recv_total = 0;
+    size_t raw_request_buffer_size = HTTP_REQUEST_HEADER_SIZE * sizeof(char);
+
 
     /** HTTP Request */
     char method[16] = { 0 };
     char uri[16] = { 0 };
+
 
     /** Accepting incoming TCP connections */
     while (1) {
@@ -128,7 +131,8 @@ int main(void)
         printf("New TCP connection from %s\n", address);
 
         memset(recv_buffer, 0, READ_SIZE);
-        memset(buffer, 0, buffer_size);
+        memset(raw_request, 0, raw_request_buffer_size);
+        memset(raw_response, 0, HTTP_RESPONSE_SIZE * sizeof(char));
         memset(&req, 0, sizeof(req));
         bytes_recv_total = 0;
 
@@ -139,11 +143,11 @@ int main(void)
                printf("recv error: %s\n", strerror(errno));
                break;
            }
-           memcpy(buffer + bytes_recv_total, recv_buffer, bytes_recv);
+           memcpy(raw_request + bytes_recv_total, recv_buffer, bytes_recv);
            bytes_recv_total += bytes_recv;
-           if (bytes_recv_total > HTTP_REQUEST_SIZE)
+           if (bytes_recv_total > HTTP_REQUEST_HEADER_SIZE)
            {
-               printf("Exceed maximum size of HTTP request\n");
+               printf("Exceed maximum size of HTTP request header\n");
                // ... Send error code
                break;
            }
@@ -155,7 +159,7 @@ int main(void)
                printf("http request byte at pos %d: %c\n", i, buffer[i]);
            }
 #endif
-           parse_http_request(&req, buffer, bytes_recv_total, buffer_size);
+           parse_http_request(&req, raw_request, bytes_recv_total, raw_request_buffer_size);
 #ifdef DEBUG
            print_http_request_state(&req, buffer);
 #endif
@@ -166,14 +170,36 @@ int main(void)
            }
            if (req.status > 0)
            {
-               assert(!get_request_method(&req, buffer, method, sizeof method));
-               assert(!get_request_uri(&req, buffer, uri, sizeof uri));
+               assert(!get_request_method(&req, raw_request, method, sizeof method));
+               assert(!get_request_uri(&req, raw_request, uri, sizeof uri));
 
                if (!strcmp(uri, "/"))
                {
                    if (send(client_fd, HTTP_200, sizeof HTTP_200, 0) == -1)
                    {
                        printf("send HTTP_200 error %s\n", strerror(errno));
+                   }
+               } else if (!strncmp(uri, "/echo/", 5)) {
+                   size_t echo_length = req.uri.end - req.uri.start - 5;
+                   size_t write_cursor = 0;
+
+                   char content_type_header[128];
+                   sprintf(content_type_header, "Content-Lenght: %zu\r\n\r\n", echo_length);
+
+                   sprintf(raw_response, "%s", HTTP_200);
+                   write_cursor += strlen(HTTP_200);
+
+                   sprintf(raw_response + write_cursor, "%s", CONTENT_TYPE_PLAIN_TEXT);
+                   write_cursor += strlen(CONTENT_TYPE_PLAIN_TEXT);
+
+                   sprintf(raw_response + write_cursor, "%s", content_type_header);
+                   write_cursor += strlen(content_type_header);
+
+                   sprintf(raw_response + write_cursor, "%s", uri + 6);
+
+                   if (send(client_fd, raw_response, strlen(raw_response), 0))
+                   {
+                       printf("send response error %s\n", strerror(errno));
                    }
                } else {
                    if (send(client_fd, HTTP_404, sizeof HTTP_404, 0))
