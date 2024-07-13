@@ -203,6 +203,7 @@ int main(void)
                    rcode = get_header(&req, raw_request, "User-Agent", user_agent, 32);
                    if (!rcode) break;
 
+                   printf("%s, %zu", user_agent, strlen(user_agent));
                    sprintf(content_type_header, "Content-Length: %zu\r\n\r\n", strlen(user_agent));
 
                    strcat(raw_response, HTTP_200);
