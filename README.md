@@ -1,38 +1,18 @@
-[![progress-banner](https://backend.codecrafters.io/progress/http-server/7045e897-1908-4238-96a8-c1dff3fbdf03)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
+## My Attempt Of Building C HTTP Server From Square Zero
 
-This is a starting point for C solutions to the
-["Build Your Own HTTP server" Challenge](https://app.codecrafters.io/courses/http-server/overview).
+- The state of the source code for this HTTP Server is for exploration and 
+learning purpose since I wrote it for one of the CodeCrafter Project.
 
-[HTTP](https://en.wikipedia.org/wiki/Hypertext_Transfer_Protocol) is the
-protocol that powers the web. In this challenge, you'll build a HTTP/1.1 server
-that is capable of serving multiple clients.
+- The only part that is written with good care is HTTP Request Parser.
 
-Along the way you'll learn about TCP servers,
-[HTTP request syntax](https://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html),
-and more.
+- If I have any spare time, I will rewrite the logic for constructing router, 
+and handling the request after parsing, and construct the HTTP response.
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
-
-# Passing the first stage
-
-The entry point for your HTTP server implementation is in `app/server.c`. Study
-and uncomment the relevant code, and push your changes to pass the first stage:
-
-```sh
-git add .
-git commit -m "pass 1st stage" # any msg
-git push origin master
-```
-
-Time to move on to the next stage!
-
-# Stage 2 & beyond
-
-Note: This section is for stages 2 and beyond.
-
-1. Ensure you have `gcc` installed locally
-1. Run `./your_server.sh` to run your program, which is implemented in
-   `app/server.c`.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
+- Memory safety is also another largest concern I have despite Valgrind does not 
+detect any memory leak when it's running in `leak-check=full`.
+    - I will need to rewrite how string allocation and memory allocation for 
+    network I/O in more clean and verbose manner.
+    - Memory allocation and recycle should be done in higher up of call stack 
+    instead of deeper call stack because passing pointer around can become tricky
+    , and allocation might be forgotten to recycle.
+    
