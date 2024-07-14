@@ -1,5 +1,4 @@
 #include <arpa/inet.h>
-#include <assert.h>
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -16,8 +15,14 @@
 #define BACKLOG 3
 #define PORT "4221"
 
-#define READ_SIZE 1024
+#define READ_SIZE 4096
 
+
+int http_request_reader(int, struct http_request **);
+
+void router(int, struct http_request *);
+
+void safe_free(void *);
 
 int main(void)
 {
@@ -85,39 +90,6 @@ int main(void)
     printf("Listening at %s:%s\n", address, PORT);
 
 
-    /** TCP I/O */
-    char *recv_buffer = malloc(READ_SIZE * sizeof(char));
-    if (recv_buffer == NULL)
-    {
-        printf("recv_buffer malloc() error\n");
-        return -1;
-    }
-    char *raw_request = malloc(HTTP_REQUEST_HEADER_SIZE * sizeof(char));
-    if (raw_request == NULL)
-    {
-        printf("raw_request malloc() error\n");
-        return -1;
-    }
-    char *raw_response = malloc(HTTP_RESPONSE_SIZE * sizeof(char));
-    if (raw_response == NULL)
-    {
-        printf("raw_response malloc() error\n");
-        return -1;
-    }
-
-
-    /** HTTP Request State and Metadata */
-    struct http_request req = { 0 };
-    int bytes_recv = 0;
-    size_t bytes_recv_total = 0;
-    size_t raw_request_buffer_size = HTTP_REQUEST_HEADER_SIZE * sizeof(char);
-
-
-    /** HTTP Request */
-    char method[16] = { 0 };
-    char uri[16] = { 0 };
-
-
     /** Accepting incoming TCP connections */
     while (1) {
         addr_size = sizeof client_addr;
@@ -130,110 +102,171 @@ int main(void)
         inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *) &client_addr), address, sizeof address);
         printf("New TCP connection from %s\n", address);
 
-        memset(recv_buffer, 0, READ_SIZE);
-        memset(raw_request, 0, raw_request_buffer_size);
-        memset(raw_response, 0, HTTP_RESPONSE_SIZE * sizeof(char));
-        memset(&req, 0, sizeof(req));
-        bytes_recv_total = 0;
-
-        while(1) {
-           bytes_recv = recv(client_fd, recv_buffer, READ_SIZE, 0);
-           if (bytes_recv == -1)
-           {
-               printf("recv error: %s\n", strerror(errno));
-               break;
-           }
-           memcpy(raw_request + bytes_recv_total, recv_buffer, bytes_recv);
-           bytes_recv_total += bytes_recv;
-           if (bytes_recv_total > HTTP_REQUEST_HEADER_SIZE)
-           {
-               printf("Exceed maximum size of HTTP request header\n");
-               // ... Send error code
-               break;
-           }
-
-#ifdef DEBUG
-           printf("\nnumber of bytes received in total: %d\n", bytes_recv_total);
-           for (size_t i = 0; i < bytes_recv_total; i++)
-           {
-               printf("http request byte at pos %d: %c\n", i, buffer[i]);
-           }
-#endif
-           parse_http_request(&req, raw_request, bytes_recv_total, raw_request_buffer_size);
-#ifdef DEBUG
-           print_http_request_state(&req, buffer);
-#endif
-           if (req.status == -1)
-           {
-               printf("Parse failure\n");
-               break;
-           }
-           if (req.status > 0)
-           {
-               assert(!get_request_method(&req, raw_request, method, sizeof method));
-               assert(!get_request_uri(&req, raw_request, uri, sizeof uri));
-
-               printf("%s\n", raw_request);
-
-               if (!strcmp(uri, "/"))
-               {
-                   strcat(raw_response, HTTP_200);
-                   strcat(raw_response, "\r\n");
-                   if (send(client_fd, raw_response, strlen(raw_response), 0) == -1)
-                   {
-                       printf("send HTTP_200 error %s\n", strerror(errno));
-                   }
-               } else if (!strncmp(uri, "/echo/", 5)) {
-                   size_t echo_length = req.uri.end - req.uri.start - 5;
-                   size_t write_cursor = 0;
-
-                   char content_type_header[64];
-                   sprintf(content_type_header, "Content-Length: %zu\r\n\r\n", echo_length);
-
-                   strcat(raw_response, HTTP_200);
-                   strcat(raw_response, CONTENT_TYPE_PLAIN_TEXT);
-                   strcat(raw_response, content_type_header);
-                   strcat(raw_response, uri + 6);
-
-                   if (send(client_fd, raw_response, strlen(raw_response), 0) == -1)
-                   {
-                       printf("send response error %s\n", strerror(errno));
-                   }
-               } else if (!strcmp(uri, "/user-agent")) {
-                   char user_agent[64];
-                   char content_type_header[64];
-                   rcode = get_header(&req, raw_request, "User-Agent", user_agent, 32);
-                   if (!rcode) break;
-
-                   printf("%s, %zu", user_agent, strlen(user_agent));
-                   sprintf(content_type_header, "Content-Length: %zu\r\n\r\n", strlen(user_agent));
-
-                   strcat(raw_response, HTTP_200);
-                   strcat(raw_response, CONTENT_TYPE_PLAIN_TEXT);
-                   strcat(raw_response, content_type_header);
-                   strcat(raw_response, user_agent);
-
-                   if (send(client_fd, raw_response, strlen(raw_response), 0) == -1)
-                   {
-                       printf("send response error %s\n", strerror(errno));
-                   }
-               } else {
-                   if (send(client_fd, HTTP_404, sizeof HTTP_404, 0) == -1)
-                   {
-                       printf("send HTTP_404 error %s\n", strerror(errno));
-                   }
-               }
-               break;
-           }
+        /** Handling */
+        struct http_request *r;
+        rcode = http_request_reader(client_fd, &r);
+        if (rcode) {
+            router(client_fd, r);
         }
+        free_http_request(r);
 
         close(client_fd);
         break;
     }
 
-
     /** Server Shutdown */
     close(server_fd);
 
     return 0;
+}
+
+int http_request_reader(int fd, struct http_request **r) {
+    char *buffer = NULL;
+    int rcode = 0, nrecv = 0, trecv = 0;
+
+    /** Malloc */
+    buffer = malloc(READ_SIZE * sizeof(char));
+    if (buffer == NULL) {
+        printf("buffer malloc error\n");
+        if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+            printf("response send error: %s\n", strerror(errno));
+        }
+        return 0;
+    }
+
+    *r = malloc(sizeof(struct http_request));
+    if (r == NULL) {
+        printf("http request malloc error\n");
+        if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+            printf("response send error: %s\n", strerror(errno));
+        }
+        safe_free(buffer);
+        return 0;
+    }
+
+    (*r)->__buf_cap = HTTP_REQUEST_HEADER_SIZE;
+
+    (*r)->__buf = malloc(HTTP_REQUEST_HEADER_SIZE * sizeof(char));
+    if ((*r)->__buf == NULL) {
+        printf("http request buffer malloc error\n");
+        if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+            printf("response send error: %s\n", strerror(errno));
+        }
+        safe_free(buffer);
+        return 0;
+    }
+
+    /* Receiver HTTP request header */
+    while (1) {
+        nrecv = recv(fd, buffer, READ_SIZE, 0);
+        if (nrecv == -1) {
+            if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+            safe_free(buffer);
+            return 0;
+        }
+
+        if ((trecv += nrecv) > HTTP_REQUEST_HEADER_SIZE) {
+            printf("HTTP request header exceed maximum size\n");
+            if ((send(fd, HTTP_413_R, strlen(HTTP_413_R), 0)) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+            safe_free(buffer);
+            return 0;
+        }
+
+        rcode = parse_http_request(*r, buffer, nrecv);
+        if (rcode == -1) {
+            if ((send(fd, HTTP_400_R, strlen(HTTP_400_R), 0)) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+            safe_free(buffer);
+            return 0;
+        }
+        if (rcode > 0) break;
+    }
+
+    free(buffer);
+
+    return 1;
+}
+
+void router(int fd, struct http_request *r) {
+    if (match_uri(r, "/")) {
+        if (send(fd, HTTP_200_R, strlen(HTTP_200_R), 0) == -1) {
+            printf("response send error: %s\n", strerror(errno));
+        }
+    } else if (match_uri_prefix(r, "/echo/")) {
+        int rsrc_len;
+        char * rsrc;
+        if ((rsrc_len = get_rsrc(r, &rsrc)) == -1) {
+            printf("rsrc malloc error\n");
+            if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+            return;
+        }
+
+        struct http_response res = { 0 };
+        if (!init_http_response(r, &res)) {
+            printf("http response malloc error: %s\n", strerror(errno));
+            if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+            safe_free(rsrc);
+            return;
+        }
+
+        write_response_status(&res, "200", "OK");
+        write_content_length(&res, rsrc_len);
+        write_response_body(&res, rsrc, rsrc_len);
+        if (write_response_end(fd, &res) == -1) {
+            printf("http response error: %s\n", strerror(errno));
+        }
+
+        free_http_response(&res);
+        safe_free(rsrc);
+    } else if (match_uri(r, "/user-agent")) {
+        int user_agent_len;
+        char *user_agent;
+        if ((user_agent_len = get_header(r, "User-Agent", &user_agent)) == -1) {
+            printf("user_agent malloc error\n");
+            if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+            return;
+        }
+
+        struct http_response res = { 0 };
+        if (!init_http_response(r, &res)) {
+            printf("http response malloc error: %s\n", strerror(errno));
+            if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+            safe_free(user_agent);
+            return;
+        }
+
+        write_response_status(&res, "200", "OK");
+        write_content_length(&res, user_agent_len);
+        write_response_body(&res, user_agent, user_agent_len);
+        if (write_response_end(fd, &res) == -1) {
+            printf("http response error: %s\n", strerror(errno));
+        }
+
+        free_http_response(&res);
+        safe_free(user_agent);
+    } else {
+        printf("miss match\n");
+        if (send(fd, HTTP_404_R, strlen(HTTP_404_R), 0) == -1) {
+            printf("response send error: %s\n", strerror(errno));
+        }
+    }
+}
+
+void safe_free(void *p) {
+    if (p != NULL) {
+        free(p);
+    }
 }

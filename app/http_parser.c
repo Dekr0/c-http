@@ -1,6 +1,9 @@
+#include <ctype.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "http_parser.h"
+#include "type.h"
 
 
 const char http_version_prefix[5] = "HTTP/";
@@ -29,273 +32,219 @@ const char http_token[256] = {
 /**
  * @return bytes on success; -1 on failure; 0 if incomplete (It needs more data)
  */
-void parse_http_request(
-        struct http_request *req,
-        const char *raw_request_buffer,
-        size_t buffer_size,
-        size_t buffer_cap
-        )
-{
-    printf("\n");
+int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv) {
     char c;
-    while (req->lead < buffer_size)
-    {
-        c = raw_request_buffer[req->lead];
+    u32 len;
+
+    memcpy(r->__buf + r->__lead, buffer, nrecv);
+
+    while (r->__lead < nrecv && r->__lead < r->__buf_cap) {
+        c = r->__buf[r->__lead];
 #ifdef DEBUG
         printf("At state %d: tokenizing pos %d (v = %d)\n", req->__state, req->lead,
                 buffer[req->lead]);
 #endif /* ifdef DEBUG */
-        switch (req->__state) 
-        {
+        switch (r->__state) {
             case HTTP_STATE_START:
                 if (c == '\r' || c == '\n') break;
                 
-                if (!http_token[c])
-                {
-                    printf("At state %d: bad token at pos %d (v = %d)\n",
-                            req->__state, req->lead, c);
-                    req->status = -1;
-                    return;
+                if (!http_token[c]) {
+                    printf("At state %d: bad token at pos %d (v = %c [%d])\n",
+                            r->__state, r->__lead, c, c);
+                    return -1;
                 }
 
-                req->tail = req->lead;
+                r->__tail = r->__lead;
 #ifdef DEBUG
                 printf("At state %d: change to state %d\n", req->__state, 
                         HTTP_STATE_METHOD);
 #endif
-                req->__state = HTTP_STATE_METHOD;
+                r->__state = HTTP_STATE_METHOD;
                 break;
             case HTTP_STATE_METHOD:
-                if (c == ' ')
-                {
-                    if (req->lead == req->tail)
-                    {
-                        printf("At state %d: missing HTTP method\n", req->__state);
-                        req->status = -1;
-                        return;
-                    }
-
-                    req->method.start = req->tail;
-                    req->method.end = req->lead - 1;
-
-                    req->tail = req->lead + 1;
+                if (c == ' ') {
+                    r->method.beg = r->__tail;
+                    r->method.end = r->__lead - 1;
+                    r->__tail = r->__lead + 1;
 #ifdef DEBUG
                     printf("At state %d: change to state %d\n", req->__state, 
                             HTTP_STATE_URI);
 #endif
-                    req->__state = HTTP_STATE_URI;
+                    r->__state = HTTP_STATE_URI;
                     break;
                 }
 
-                if (!http_token[c])
-                {
-                    printf("At state %d: bad token at pos %d (v = %d)\n",
-                            req->__state, req->lead, c);
-                    req->status = -1;
-                    return;
+                if (!http_token[c]) {
+                    printf("At state %d: bad token at pos %d (v = %c [%d])\n",
+                            r->__state, r->__lead, c, c);
+                    return -1;
                 }
                 break;
             case HTTP_STATE_URI:
-                if (c == ' ')
-                {
-                    if (req->lead == req->tail)
-                    {
-                        printf("At state %d: missing HTTP URI\n", req->__state);
-                        req->status = -1;
-                        return;
+                if (c == ' ') {
+                    if (r->__lead == r->__tail) {
+                        printf("At state %d: missing HTTP URI\n", r->__state);
+                        return -1;
                     }
 
-                    req->uri.start = req->tail;
-                    req->uri.end = req->lead - 1;
-
-                    req->tail = req->lead + 1;
+                    r->uri.beg = r->__tail;
+                    r->uri.end = r->__lead - 1;
+                    r->__tail = r->__lead + 1;
 #ifdef DEBUG
                     printf("At state %d: change to state %d\n", req->__state,
                             HTTP_STATE_VERSION);
 #endif /* ifdef DEBUG */
-                    req->__state = HTTP_STATE_VERSION;
+                    r->__state = HTTP_STATE_VERSION;
                     break;
                 }
 
-                if (!http_token[c])
-                {
-                    printf("At state %d: bad token at pos %d (v = %d)\n",
-                            req->__state, req->lead, c);
-                    req->status = -1;
-                    return;
+                if (!http_token[c]) {
+                    printf("At state %d: bad token at pos %d (v = %c [%d])\n",
+                            r->__state, r->__lead, c, c);
+                    return -1;
                 }
 
                 break;
             case HTTP_STATE_VERSION:
-                if (req->lead - req->tail == 8 && (c == ' ' || c == '\r' || c == '\n')) // Backtracking
-                {
-                    size_t i = 0;
-                    for ( ; i < sizeof(http_version_prefix); i++)
-                    {
-                        if (raw_request_buffer[req->tail + i] != http_version_prefix[i])
-                        {
-                            printf("At state %d: bad HTTP Version token at pos %d (v = %d)\n", 
-                                    req->__state, req->tail + i, raw_request_buffer[req->tail + i]);
-                            req->status = -1;
-                            return;
-                        }
+                len = r->__lead - r->__tail;
+                if (len == 8 && (c == ' ' || c == '\r' || c == '\n')) {
+                    size_t i = r->__tail;
+
+                    int isHTTP = strncmp(r->__buf + i, HTTP, strlen(HTTP)); 
+                    if (isHTTP) {
+                        printf("At state %d: bad HTTP Version token\n", 
+                                r->__state);
+                        return -1;
+                    }
+                    i += strlen(HTTP);
+
+                    if (r->__buf[i++] != '/') {
+                        printf("At state %d: expect / after 'HTTP'\n", 
+                                r->__state);
+                        return -1;
                     }
 
-                    if (raw_request_buffer[req->tail + i] < 48 || raw_request_buffer[req->tail + i] > 57)
-                    {
-                        printf("At state %d: bad HTTP Version digit token at pos %d (v = %d)\n", 
-                                req->__state, req->tail + i, raw_request_buffer[req->tail + i]);
-                        req->status = -1;
-                        return;
+                    if (!isdigit(r->__buf[i])) {
+                        printf("At state %d: expect digit after 'HTTP/'\n", 
+                                r->__state);
+                        return -1;
+                    }
+                    r->ver_maj = r->__buf[i++] - '0';
+
+                    if (r->__buf[i++] != '.') {
+                        printf("At state %d: expect '.' after HTTP/x",
+                                r->__state);
+                        return -1;
                     }
 
-                    req->version_major = raw_request_buffer[req->tail + i] - 48;
-                    i++;
-
-                    if (raw_request_buffer[req->tail + i] != '.')
-                    {
-                        printf("At state %d: bad HTTP Version token at pos %d (v = %d)\n", 
-                                req->__state, req->tail + i, raw_request_buffer[req->tail + i]);
-                        req->status = -1;
-                        return;
+                    if (!isdigit(r->__buf[i])) {
+                        printf("At state %d: expect digit after HTTP/x.\n", 
+                                r->__state);
+                        return -1;
                     }
-                    i++;
+                    r->ver_min = r->__buf[i++] - '0';
 
-                    if (raw_request_buffer[req->tail + i] < 48 || raw_request_buffer[req->tail + i] > 57)
-                    {
-                        printf("At state %d: bad HTTP Version digit token at pos %d (v = %d)\n", 
-                                req->__state, req->tail + i, raw_request_buffer[req->tail + i]);
-                        req->status = -1;
-                        return;
-                    }
-                    req->version_minor = raw_request_buffer[req->tail + i] - 48;
-                    i++;
-
-                    if (c == '\r')
-                    {
+                    if (c == '\r') {
 #ifdef DEBUG
                         printf("At state %d: change to state %d\n", req->__state,
                                 HTTP_STATE_CR);
 #endif /* ifdef DEBUG */
-                        req->__state = HTTP_STATE_CR;
+                        r->__state = HTTP_STATE_CR;
                     } else {
 #ifdef DEBUG
                         printf("At state %d: change to state %d\n", req->__state,
                                 HTTP_STATE_LF1);
 #endif /* ifdef DEBUG */
-                        req->__state = HTTP_STATE_LF1;
+                        r->__state = HTTP_STATE_LF1;
                     }
                     break;
                 }
                 break;
             case HTTP_STATE_CR:
-                if (c != '\n')
-                {
-                    printf("At state %d: expected LF after CR at post %d but received %d\n",
-                            req->__state, req->lead, c);
-                    req->status = -1;
-                    return;
+                if (c != '\n') {
+                    printf("At state %d: expected LF after CR at post %d\n",
+                            r->__state, r->__lead);
+                    return -1;
                 }
 #ifdef DEBUG
                 printf("At state %d: change to state %d\n", req->__state,
                         HTTP_STATE_LF1);
 #endif /* ifdef DEBUG */
-                req->__state = HTTP_STATE_LF1;
+                r->__state = HTTP_STATE_LF1;
                 break;
             case HTTP_STATE_LF1:
-                if (c == '\r')
-                {
+                if (c == '\r') {
 #ifdef DEBUG
                     printf("At state %d: change to state %d\n", req->__state,
                             HTTP_STATE_LF2);
 #endif /* ifdef DEBUG */
-                    req->__state = HTTP_STATE_LF2;
+                    r->__state = HTTP_STATE_LF2;
                     break;
                 }
 
-                if (c == '\n')
-                {
-                    req->status = req->lead;
-                    return;
+                if (c == '\n') {
+                    return r->__lead;
                 }
 
-                if (!http_token[c])
-                {
-                    printf("At state %d: bad token at pos %d (v = %d)\n",
-                            req->__state, req->lead, c);
+                if (!http_token[c]) {
+                    printf("At state %d: bad token at pos %d (v = %c, [%d])\n",
+                            r->__state, r->__lead, c, c);
                     printf("Forbid empty header name or line folding\n");
-                    req->status = -1;
-                    return;
+                    return -1;
                 }
 
-                req->tail = req->lead;
-                req->headers[req->num_headers].header_name.start = req->tail;
-
+                r->__tail = r->__lead;
+                r->headers[r->header_count].name.beg = r->__tail;
 #ifdef DEBUG
                 printf("At state %d: change to state %d\n",
                         req->__state, HTTP_STATE_HEADER_NAME);
 #endif /* ifdef DEBUG */
-                req->__state = HTTP_STATE_HEADER_NAME;
+                r->__state = HTTP_STATE_HEADER_NAME;
                 break;
             case HTTP_STATE_HEADER_NAME:
-                if (c == ':')
-                {
-                    if (req->tail == req->lead)
-                    {
-                        printf("At state %d: forbid empty header name\n",
-                                req->__state);
-                        req->status = -1;
-                        return;
-                    }
-                    req->headers[req->num_headers].header_name.end = req->lead - 1;
-
+                if (c == ':') {
+                    r->headers[r->header_count].name.end = r->__lead - 1;
 #ifdef DEBUG
                     printf("At state %d: change to state %d\n",
                             req->__state, HTTP_STATE_HEADER_COLON);
 #endif /* ifdef DEBUG */
-                    req->__state = HTTP_STATE_HEADER_COLON;
+                    r->__state = HTTP_STATE_HEADER_COLON;
                     break;
                 }
-                if (!http_token[c])
-                {
-                    printf("At state %d: bad token at pos %d (v = %d)\n",
-                            req->__state, req->lead, c);
-                    req->status = -1;
-                    return;
+                if (!http_token[c]) {
+                    printf("At state %d: bad token at pos %d (v = %c, [%d])\n",
+                            r->__state, r->__lead, c, c);
+                    return -1;
                 }
                 break;
             case HTTP_STATE_HEADER_COLON:
-                if (c == ' ' || c == '\t') break; // Ignoring multiple spaces / tabs
-
-                req->tail = req->lead;
-                req->headers[req->num_headers].header_value.start = req->tail;
+                if (c == ' ' || c == '\t') break;
+                r->__tail = r->__lead;
+                r->headers[r->header_count].val.beg = r->__tail;
 #ifdef DEBUG
                 printf("At state %d: change to state %d\n",
                         req->__state, HTTP_STATE_HEADER_VALUE);
 #endif /* ifdef DEBUG */
-                req->__state = HTTP_STATE_HEADER_VALUE;
+                r->__state = HTTP_STATE_HEADER_VALUE;
             case HTTP_STATE_HEADER_VALUE:
-                if (c == '\r' || c == '\n')
-                {
-                    size_t i = req->lead - 1;
-                    while (i >= req->tail && 
-                           (raw_request_buffer[i] == ' ' || raw_request_buffer[i] == '\t'))
-                    {
+                if (c == '\r' || c == '\n') {
+                    size_t i = r->__lead - 1;
+                    while (i >= r->__tail && (r->__buf[i] == ' ' ||
+                                r->__buf[i] == '\t'))
                         i--;
-                    }
-                    req->headers[req->num_headers].header_value.end = i;
-                    req->num_headers++;
 
-                    if (c == '\r')
-                    {
+                    r->headers[r->header_count].val.end = i;
+                    r->header_count++;
+
+                    if (c == '\r') {
 #ifdef DEBUG
                         printf("At state %d: change to state %d\n",
                                 req->__state, HTTP_STATE_CR);
 #endif /* ifdef DEBUG */
-                        req->__state = HTTP_STATE_CR;
+                        r->__state = HTTP_STATE_CR;
                         break;
                     }
-                    req->__state = HTTP_STATE_LF1;
+                    r->__state = HTTP_STATE_LF1;
 #ifdef DEBUG
                     printf("At state %d: change to state %d\n",
                             req->__state, HTTP_STATE_LF1);
@@ -303,36 +252,30 @@ void parse_http_request(
                     break;
                 }
 
-                if ((c < 0x20 && c != '\t') || (0x7F <= c))
-                {
-                    printf("At state %d: bad token for HTTP field value at pos %d (v = %d)",
-                            req->__state, req->lead, c);
-                    req->status = -1;
-                    return;
+                if ((c < 0x20 && c != '\t') || (0x7F <= c)) {
+                    printf("At state %d: bad token for HTTP field value at \
+                            pos %d (v = %c, [%d])",
+                            r->__state, r->__lead, c, c);
+                    return -1;
                 }
                 break;
             case HTTP_STATE_LF2:
-                if (c != '\n')
-                {
-                    printf("At state %d: bad token at pos %d (v = %d)\n",
-                            req->__state, req->lead, c);
-                    req->status = -1;
-                    return;
+                if (c != '\n') {
+                    printf("At state %d: bad token at pos %d (v = %c, [%d])\n",
+                            r->__state, r->__lead, c, c);
+                    return -1;
                 }
-                req->status = req->lead;
-                return;
+                return r->__lead;
         }
-        req->lead += 1;
+        r->__lead += 1;
     }
 
-    if (req->lead < buffer_cap)
-    {
+    if (r->__lead < r->__buf_cap) {
 #ifdef DEBUG
         printf("At state %d: require further recv\n", req->__state);
-        req->status = 0;
 #endif /* ifdef DEBUG */
-        return;
+        return 0;
     }
 
-    req->status = -1;
+    return -1;
 }

@@ -1,7 +1,6 @@
 #ifndef HTTP_MESSAGE_PARSER_H 
 #define HTTP_MESSAGE_PARSER_H
 
-#include <stdlib.h>
 
 #include "http.h"
 
@@ -14,11 +13,7 @@
  * The correctness of each HTTP request token is handled by handler. The parser 
  * solely take the responsibility of splitting out token.
  */
-void parse_http_request(
-        struct http_request *,
-        const char *, 
-        size_t,
-        size_t);
+int parse_http_request(struct http_request *, const char *, size_t);
 
 
 #endif

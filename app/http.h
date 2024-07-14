@@ -4,8 +4,10 @@
 
 #include <stdlib.h>
 
-#define HTTP_REQUEST_HEADER_SIZE  4096 // Can be extended
-#define HTTP_RESPONSE_SIZE 4096
+#include "type.h"
+
+#define HTTP_REQUEST_HEADER_SIZE  4096
+#define HTTP_RESPONSE_SIZE        4096
 
 #define HTTP_STATE_START        0
 #define HTTP_STATE_METHOD       1
@@ -14,62 +16,103 @@
 #define HTTP_STATE_HEADER_NAME  4
 #define HTTP_STATE_HEADER_COLON 5
 #define HTTP_STATE_HEADER_VALUE 6
-#define HTTP_STATE_CR      100
-#define HTTP_STATE_LF1     101
-#define HTTP_STATE_LF2     102
+#define HTTP_STATE_CR           100
+#define HTTP_STATE_LF1          101
+#define HTTP_STATE_LF2          102
 
-#define HTTP_MAX_HEADERS   
+#define HTTP_MAX_HEADERS 29 
 
-#define CR "\r"
-#define LF "\r"
+#define HTTP_200   "HTTP/1.1 200 OK\r\n"
+#define HTTP_200_R "HTTP/1.1 200 OK\r\n\r\n"
+#define HTTP_400   "HTTP/1.1 400 Bad Request\r\n"
+#define HTTP_400_R "HTTP/1.1 400 Bad Request\r\n\r\n"
+#define HTTP_404   "HTTP/1.1 404 Not Found\r\n"
+#define HTTP_404_R "HTTP/1.1 404 Not Found\r\n\r\n"
+#define HTTP_413   "HTTP/1.1 413 Content Too Large\r\n"
+#define HTTP_413_R "HTTP/1.1 413 Content Too Large\r\n\r\n"
+#define HTTP_500   "HTTP/1.1 500 Internal Server Error\r\n"
+#define HTTP_500_R "HTTP/1.1 500 Internal Server Error\r\n\r\n"
 
-#define CONTENT_TYPE_PLAIN_TEXT "Content-Type: text/plain\r\n"
+#define HTTP   "HTTP"
+#define CR     "\r"
+#define LF     "\r"
+#define SP     " "
+#define CRLF   "\r\n"
 
-#define HTTP_200 "HTTP/1.1 200 OK\r\n"
-#define HTTP_404 "HTTP/1.1 404 Not Found\r\n\r\n"
 
-
-struct http_request_slice 
-{
-    unsigned short start;
-    unsigned short end;
+struct __http_slice {
+    u16 beg; // 16
+    u16 end; // 16
 };
 
-struct http_request_header_slice
-{
-    struct http_request_slice header_name;
-    struct http_request_slice header_value;
+struct __http_header {
+    struct __http_slice name; // 32
+    struct __http_slice val;  // 32
 };
 
-struct http_request
-{
-    int status; // 32, 1 => complete, -1 => failure, 0 => incomplete
-    unsigned int lead; // 32
-    unsigned int tail; // 32
-    unsigned char __state; // 8
-    unsigned char version_major; // 8
-    unsigned char version_minor; // 8
-    unsigned char num_headers; // 8
-    struct http_request_slice method; // 32
-    struct http_request_slice uri; // 32
-    struct http_request_header_slice headers[HTTP_MAX_HEADERS]; 
+struct http_request {
+    u32    __lead;             // 32
+    u32    __tail;             // 32
+    u8     __state;            // 8
+    u8     ver_maj;            // 8
+    u8     ver_min;            // 8
+    u8     header_count;       // 8
+    char  *__buf;              // 32
+    size_t __buf_cap;          // 64
+    struct __http_slice  method; // 32
+    struct __http_slice  uri;    // 32
+    struct __http_slice  body;   // 32
+    struct __http_header headers[HTTP_MAX_HEADERS]; 
 };
 
-struct http_header
-{
-    char header_name[64];
-    char header_value[64];
+struct http_header {
+    char *name;
+    char *val ;
 };
 
-int get_request_method(struct http_request *, const char *, char *, size_t);
+struct http_response {
+    u32    __cursor;
+    char * __buf;
+};
 
-int get_header(struct http_request *, const char *, const char *, char *, const size_t);
+int get_header(const struct http_request *, const char *, char **) ;
 
-int get_request_uri(struct http_request *, const char *, char *, size_t);
+int get_method(const struct http_request *, char **);
 
-void print_http_request(struct http_request *, const char *b);
+int get_rsrc(const struct http_request *, char **);
 
-void print_http_request_state(struct http_request *, const char *b);
+int get_uri(const struct http_request *, char **);
+
+int has_header(const struct http_request *, const char *);
+
+u8 match_method(const struct http_request *, const char *);
+
+u8 match_uri(const struct http_request *, const char *);
+
+u8 match_uri_prefix(const struct http_request *, const char *);
+
+void free_http_request(struct http_request *);
+
+/** This four functions need to perform in sequence and effect is finalized. The
+ * write cursor only move forward.
+ *
+ * The main reason is to save on memory space of keep the state of response 
+ * since it is rather odd to construct and set fields for a response and 
+ * change it later before finalizing all the necessary pieces for a response */
+int init_http_response(struct http_request *, struct http_response *);
+
+void write_response_status(struct http_response *, const char *, const char *);
+
+/** This function can be called multiple times before writing the body */
+void write_response_header(struct http_response *, const char *, const char *, const size_t);
+
+void write_content_length(struct http_response *, const int);
+
+void write_response_body(struct http_response *, const char *, const size_t);
+
+int write_response_end(int fd, struct http_response *);
+
+void free_http_response(struct http_response *);
 
 
 #endif // !HTTP_H
