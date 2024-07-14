@@ -8,14 +8,13 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "http.h"
 #include "ip.h"
 #include "http_parser.h"
 
 #define BACKLOG 10
 #define PORT "4221"
 
-#define READ_SIZE 4096
+#define READ_SIZE 3
 
 
 int http_request_reader(int, struct http_request **);
@@ -158,6 +157,7 @@ int http_request_reader(int fd, struct http_request **r) {
 
     /* Receiver HTTP request header */
     while (1) {
+        memset(buffer, 0, READ_SIZE * sizeof(char));
         nrecv = recv(fd, buffer, READ_SIZE, 0);
         if (nrecv == -1) {
             if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
@@ -176,7 +176,7 @@ int http_request_reader(int fd, struct http_request **r) {
             return 0;
         }
 
-        rcode = parse_http_request(*r, buffer, nrecv);
+        rcode = parse_http_request(*r, buffer, nrecv, trecv);
         if (rcode == -1) {
             if ((send(fd, HTTP_400_R, strlen(HTTP_400_R), 0)) == -1) {
                 printf("response send error: %s\n", strerror(errno));

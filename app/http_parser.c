@@ -32,17 +32,18 @@ const char http_token[256] = {
 /**
  * @return bytes on success; -1 on failure; 0 if incomplete (It needs more data)
  */
-int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv) {
-    char c;
-    u32 len;
+int parse_http_request(struct http_request *r, const char *buffer, 
+        size_t nrecv, size_t trecv) {
+    char c = 0;
+    u32 len = 0;
 
     memcpy(r->__buf + r->__lead, buffer, nrecv);
 
-    while (r->__lead < nrecv && r->__lead < r->__buf_cap) {
+    while (r->__lead < trecv && r->__lead < r->__buf_cap) {
         c = r->__buf[r->__lead];
 #ifdef DEBUG
-        printf("At state %d: tokenizing pos %d (v = %d)\n", req->__state, req->lead,
-                buffer[req->lead]);
+        printf("At state %d: tokenizing pos %d (v = %d)\n", r->__state, r->__lead,
+                buffer[r->__lead]);
 #endif /* ifdef DEBUG */
         switch (r->__state) {
             case HTTP_STATE_START:
@@ -56,9 +57,9 @@ int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv)
 
                 r->__tail = r->__lead;
 #ifdef DEBUG
-                printf("At state %d: change to state %d\n", req->__state, 
+                printf("At state %d: change to state %d\n", r->__state, 
                         HTTP_STATE_METHOD);
-#endif
+#endif /* ifdef DEBUG */
                 r->__state = HTTP_STATE_METHOD;
                 break;
             case HTTP_STATE_METHOD:
@@ -67,9 +68,9 @@ int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv)
                     r->method.end = r->__lead - 1;
                     r->__tail = r->__lead + 1;
 #ifdef DEBUG
-                    printf("At state %d: change to state %d\n", req->__state, 
+                    printf("At state %d: change to state %d\n", r->__state, 
                             HTTP_STATE_URI);
-#endif
+#endif /* ifdef DEBUG */
                     r->__state = HTTP_STATE_URI;
                     break;
                 }
@@ -91,9 +92,9 @@ int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv)
                     r->uri.end = r->__lead - 1;
                     r->__tail = r->__lead + 1;
 #ifdef DEBUG
-                    printf("At state %d: change to state %d\n", req->__state,
+                    printf("At state %d: change to state %d\n", r->__state,
                             HTTP_STATE_VERSION);
-#endif /* ifdef DEBUG */
+#endif
                     r->__state = HTTP_STATE_VERSION;
                     break;
                 }
@@ -146,13 +147,13 @@ int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv)
 
                     if (c == '\r') {
 #ifdef DEBUG
-                        printf("At state %d: change to state %d\n", req->__state,
+                        printf("At state %d: change to state %d\n", r->__state,
                                 HTTP_STATE_CR);
-#endif /* ifdef DEBUG */
+#endif
                         r->__state = HTTP_STATE_CR;
                     } else {
 #ifdef DEBUG
-                        printf("At state %d: change to state %d\n", req->__state,
+                        printf("At state %d: change to state %d\n", r->__state,
                                 HTTP_STATE_LF1);
 #endif /* ifdef DEBUG */
                         r->__state = HTTP_STATE_LF1;
@@ -167,17 +168,17 @@ int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv)
                     return -1;
                 }
 #ifdef DEBUG
-                printf("At state %d: change to state %d\n", req->__state,
+                printf("At state %d: change to state %d\n", r->__state,
                         HTTP_STATE_LF1);
-#endif /* ifdef DEBUG */
+#endif /* if 0 */
                 r->__state = HTTP_STATE_LF1;
                 break;
             case HTTP_STATE_LF1:
                 if (c == '\r') {
 #ifdef DEBUG
-                    printf("At state %d: change to state %d\n", req->__state,
+                    printf("At state %d: change to state %d\n", r->__state,
                             HTTP_STATE_LF2);
-#endif /* ifdef DEBUG */
+#endif
                     r->__state = HTTP_STATE_LF2;
                     break;
                 }
@@ -197,7 +198,7 @@ int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv)
                 r->headers[r->header_count].name.beg = r->__tail;
 #ifdef DEBUG
                 printf("At state %d: change to state %d\n",
-                        req->__state, HTTP_STATE_HEADER_NAME);
+                        r->__state, HTTP_STATE_HEADER_NAME);
 #endif /* ifdef DEBUG */
                 r->__state = HTTP_STATE_HEADER_NAME;
                 break;
@@ -206,7 +207,7 @@ int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv)
                     r->headers[r->header_count].name.end = r->__lead - 1;
 #ifdef DEBUG
                     printf("At state %d: change to state %d\n",
-                            req->__state, HTTP_STATE_HEADER_COLON);
+                            r->__state, HTTP_STATE_HEADER_COLON);
 #endif /* ifdef DEBUG */
                     r->__state = HTTP_STATE_HEADER_COLON;
                     break;
@@ -223,7 +224,7 @@ int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv)
                 r->headers[r->header_count].val.beg = r->__tail;
 #ifdef DEBUG
                 printf("At state %d: change to state %d\n",
-                        req->__state, HTTP_STATE_HEADER_VALUE);
+                        r->__state, HTTP_STATE_HEADER_VALUE);
 #endif /* ifdef DEBUG */
                 r->__state = HTTP_STATE_HEADER_VALUE;
             case HTTP_STATE_HEADER_VALUE:
@@ -239,7 +240,7 @@ int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv)
                     if (c == '\r') {
 #ifdef DEBUG
                         printf("At state %d: change to state %d\n",
-                                req->__state, HTTP_STATE_CR);
+                                r->__state, HTTP_STATE_CR);
 #endif /* ifdef DEBUG */
                         r->__state = HTTP_STATE_CR;
                         break;
@@ -247,7 +248,7 @@ int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv)
                     r->__state = HTTP_STATE_LF1;
 #ifdef DEBUG
                     printf("At state %d: change to state %d\n",
-                            req->__state, HTTP_STATE_LF1);
+                            r->__state, HTTP_STATE_LF1);
 #endif /* ifdef DEBUG */
                     break;
                 }
@@ -272,7 +273,7 @@ int parse_http_request(struct http_request *r, const char *buffer, size_t nrecv)
 
     if (r->__lead < r->__buf_cap) {
 #ifdef DEBUG
-        printf("At state %d: require further recv\n", req->__state);
+        printf("At state %d: require further recv\n", r->__state);
 #endif /* ifdef DEBUG */
         return 0;
     }
