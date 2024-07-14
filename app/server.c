@@ -2,10 +2,12 @@
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "http.h"
@@ -23,6 +25,13 @@ int http_request_reader(int, struct http_request **);
 void router(int, struct http_request *);
 
 void safe_free(void *);
+
+void sigchld_handler(int s) {
+    int saved_errno = errno;
+    while (waitpid(-1, NULL, WNOHANG) > 0);
+
+    errno = saved_errno;
+}
 
 int main(void)
 {
@@ -99,19 +108,23 @@ int main(void)
             continue;
         }
 
+
         inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *) &client_addr), address, sizeof address);
         printf("New TCP connection from %s\n", address);
 
         /** Handling */
-        struct http_request *r;
-        rcode = http_request_reader(client_fd, &r);
-        if (rcode) {
-            router(client_fd, r);
-        }
-        free_http_request(r);
+        if (!fork()) {
+            close(server_fd);
+            struct http_request *r;
+            rcode = http_request_reader(client_fd, &r);
+            if (rcode) {
+                router(client_fd, r);
+            }
+            free_http_request(r);
 
+            close(client_fd);
+        }
         close(client_fd);
-        break;
     }
 
     /** Server Shutdown */
