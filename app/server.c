@@ -2,19 +2,17 @@
 #include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include "http.h"
 #include "ip.h"
 #include "http_parser.h"
 
-#define BACKLOG 3
+#define BACKLOG 10
 #define PORT "4221"
 
 #define READ_SIZE 4096
@@ -25,13 +23,6 @@ int http_request_reader(int, struct http_request **);
 void router(int, struct http_request *);
 
 void safe_free(void *);
-
-void sigchld_handler(int s) {
-    int saved_errno = errno;
-    while (waitpid(-1, NULL, WNOHANG) > 0);
-
-    errno = saved_errno;
-}
 
 int main(void)
 {
@@ -94,11 +85,6 @@ int main(void)
     }
 
 
-    /** Logging Server Information */
-    inet_ntop(server_info->ai_family, get_in_addr(server_info->ai_addr), address, sizeof address);
-    printf("Listening at %s:%s\n", address, PORT);
-
-
     /** Accepting incoming TCP connections */
     while (1) {
         addr_size = sizeof client_addr;
@@ -108,21 +94,20 @@ int main(void)
             continue;
         }
 
-
         inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *) &client_addr), address, sizeof address);
         printf("New TCP connection from %s\n", address);
 
-        /** Handling */
         if (!fork()) {
             close(server_fd);
+            /** Handling */
             struct http_request *r;
             rcode = http_request_reader(client_fd, &r);
             if (rcode) {
                 router(client_fd, r);
             }
             free_http_request(r);
-
             close(client_fd);
+            exit(0);
         }
         close(client_fd);
     }
@@ -146,6 +131,7 @@ int http_request_reader(int fd, struct http_request **r) {
         }
         return 0;
     }
+    memset(buffer, 0, READ_SIZE * sizeof(char));
 
     *r = malloc(sizeof(struct http_request));
     if (r == NULL) {
@@ -156,9 +142,9 @@ int http_request_reader(int fd, struct http_request **r) {
         safe_free(buffer);
         return 0;
     }
+    memset(*r, 0, sizeof(struct http_request));
 
     (*r)->__buf_cap = HTTP_REQUEST_HEADER_SIZE;
-
     (*r)->__buf = malloc(HTTP_REQUEST_HEADER_SIZE * sizeof(char));
     if ((*r)->__buf == NULL) {
         printf("http request buffer malloc error\n");
@@ -168,6 +154,7 @@ int http_request_reader(int fd, struct http_request **r) {
         safe_free(buffer);
         return 0;
     }
+    memset((*r)->__buf, 0, HTTP_REQUEST_HEADER_SIZE);
 
     /* Receiver HTTP request header */
     while (1) {

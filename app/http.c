@@ -14,7 +14,6 @@ int __get_slice(const struct __http_slice *s, const char *b, char **dest) {
     if (*dest == NULL) {
         return -1;
     }
-
     memset(*dest, 0, len * sizeof(char));
     memcpy(*dest, b + s->beg, len - 1);
 
@@ -113,6 +112,7 @@ int init_http_response(struct http_request *req, struct http_response *res) {
     if (res->__buf == NULL) {
         return 0;
     }
+    memset(res->__buf, 0, HTTP_RESPONSE_SIZE * sizeof(char));
     res->__cursor = 0;
 
     char src[16];
