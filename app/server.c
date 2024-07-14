@@ -219,6 +219,8 @@ void router(int fd, struct http_request *r) {
         }
 
         write_response_status(&res, "200", "OK");
+        write_response_header(&res, "Content-Type", "text/plain",
+                strlen("text/plain"));
         write_content_length(&res, rsrc_len);
         write_response_body(&res, rsrc, rsrc_len);
         if (write_response_end(fd, &res) == -1) {
@@ -249,6 +251,8 @@ void router(int fd, struct http_request *r) {
         }
 
         write_response_status(&res, "200", "OK");
+        write_response_header(&res, "Content-Type", "text/plain",
+                strlen("text/plain"));
         write_content_length(&res, user_agent_len);
         write_response_body(&res, user_agent, user_agent_len);
         if (write_response_end(fd, &res) == -1) {
