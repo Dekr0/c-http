@@ -16,6 +16,7 @@
 
 #define BACKLOG 10
 #define PORT "4221"
+#define TMP  "/tmp/data/codecrafters.io/http-server-tester"
 
 #define READ_SIZE 3
 
@@ -194,69 +195,152 @@ void router(int fd, struct http_request *r) {
             printf("response send error: %s\n", strerror(errno));
         }
     } else if (match_uri_prefix(r, "/files/")) {
-        char filename[64];
-        memset(filename, 0, 64 * sizeof(char));
-        if (get_rsrc(r, filename) == 0) {
-            if (send(fd, HTTP_404_R, strlen(HTTP_404_R), 0) == -1) {
-                printf("response send error: %s\n", strerror(errno));
+        if (match_method(r, "POST")) {
+            char filename[64];
+            memset(filename, 0, 64 * sizeof(char));
+            if (get_rsrc(r, filename) == 0) {
+                if (send(fd, HTTP_400_R, strlen(HTTP_400_R), 0) == -1) {
+                    printf("response send error: %s\n", strerror(errno));
+                }
+                return;
             }
-            return;
-        }
-
-        char path[128];
-        memset(path, 0, 128 * sizeof(char));
-        sprintf(path, "/tmp/data/codecrafters.io/http-server-tester/%s", filename);
-
-        struct stat st;
-
-        if (stat(path, &st) == -1) {
-            printf("stat error: %s\n", strerror(errno));
-            if (send(fd, HTTP_404_R, strlen(HTTP_404_R), 0) == -1) {
-                printf("response send error: %s\n", strerror(errno));
+            char content_length_str[16];
+            memset(content_length_str, 0, 16 * sizeof(char));
+            if (get_header(r, "Content-Length", content_length_str) == 0) {
+                if (send(fd, HTTP_400_R, strlen(HTTP_400_R), 0) == -1) {
+                    printf("response send error: %s\n", strerror(errno));
+                }
+                return;
             }
-            return;
-        }
 
-        int ffd = open(path, O_RDONLY, 0);
-        if (ffd == -1) {
-            printf("open error: %s\n", strerror(errno));
-            if (send(fd, HTTP_404_R, strlen(HTTP_404_R), 0) == -1) {
-                printf("response send error: %s\n", strerror(errno));
+            u32 content_length = strtol(content_length_str, NULL, 10);
+            if (content_length == 0) {
+                if (send(fd, HTTP_400_R, strlen(HTTP_400_R), 0) == -1) {
+                    printf("response send error: %s\n", strerror(errno));
+                }
+                return;
             }
-            return;
-        }
 
-        struct http_response res = { 0 };
-        if (!init_http_response(r, &res)) {
-            printf("http response init error");
-            if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
-                printf("response send error: %s\n", strerror(errno));
-            }
-            return;
-        }
+            char path[128];
+            memset(path, 0, 128 * sizeof(char));
+            sprintf(path, "%s/%s", TMP, filename);
 
-        const char *content_type = "application/octet-stream";
-        write_response_status(&res, "200", "OK");
-        write_response_header(&res, "Content-Type", content_type,
-                strlen(content_type));
-        write_content_length(&res, st.st_size);
-        write_response_end_header(&res);
+            printf("%s\n", path);
 
-        int nread;
-        char buffer[2048];
-        while ((nread = read(ffd, buffer, 2048)) != 0) {
-            if (nread == -1) {
-                printf("read error: %s\n", strerror(errno));
+            int ffd = open(path, O_WRONLY |O_CREAT| O_TRUNC);
+            if (ffd == -1) {
+                printf("open error: %s\n", strerror(errno));
                 if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
                     printf("response send error: %s\n", strerror(errno));
                 }
-                close(ffd);
                 return;
             }
-            write_response_body(&res, buffer, nread);
-        }
-        if (write_response_end(fd, &res) == -1) {
-            printf("response send error: %s\n", strerror(errno));
+
+            const int nflush = flush(r, ffd);
+            if (nflush == -1) {
+                printf("write error: %s\n", strerror(errno));
+                if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                    printf("response send error: %s\n", strerror(errno));
+                }
+                return;
+                close(ffd);
+            }
+            content_length -= nflush;
+
+            /** Unsafe */
+            int nread;
+            char buffer[READ_SIZE];
+            while (content_length > 0) {
+                memset(buffer, 0, READ_SIZE * sizeof(char));
+                nread = recv(fd, buffer, content_length, 0);
+                printf("bytes read: %d\n", nread);
+                if (nread == -1) {
+                    printf("recv error: %s\n", strerror(errno));
+                    if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                        printf("response send error: %s\n", strerror(errno));
+                    }
+                    close(ffd);
+                    break;
+                }
+                if (write(ffd, buffer, nread) == -1) {
+                    printf("write error: %s\n", strerror(errno));
+                    if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                        printf("response send error: %s\n", strerror(errno));
+                    }
+                    close(ffd);
+                    break;
+                }
+                content_length -= nread;
+            }
+            close(ffd);
+            if (send(fd, HTTP_201_R, strlen(HTTP_201_R), 0) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+        } else if (match_method(r, "GET")) {
+            char filename[64];
+            memset(filename, 0, 64 * sizeof(char));
+            if (get_rsrc(r, filename) == 0) {
+                if (send(fd, HTTP_404_R, strlen(HTTP_404_R), 0) == -1) {
+                    printf("response send error: %s\n", strerror(errno));
+                }
+                return;
+            }
+
+            char path[128];
+            memset(path, 0, 128 * sizeof(char));
+            sprintf(path, "%s/%s", TMP, filename);
+
+            struct stat st;
+
+            if (stat(path, &st) == -1) {
+                printf("stat error: %s\n", strerror(errno));
+                if (send(fd, HTTP_404_R, strlen(HTTP_404_R), 0) == -1) {
+                    printf("response send error: %s\n", strerror(errno));
+                }
+                return;
+            }
+
+            int ffd = open(path, O_RDONLY, 0);
+            if (ffd == -1) {
+                printf("open error: %s\n", strerror(errno));
+                if (send(fd, HTTP_404_R, strlen(HTTP_404_R), 0) == -1) {
+                    printf("response send error: %s\n", strerror(errno));
+                }
+                return;
+            }
+
+            struct http_response res = { 0 };
+            if (!init_http_response(r, &res)) {
+                printf("http response init error");
+                if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                    printf("response send error: %s\n", strerror(errno));
+                }
+                return;
+            }
+
+            const char *content_type = "application/octet-stream";
+            write_response_status(&res, "200", "OK");
+            write_response_header(&res, "Content-Type", content_type,
+                    strlen(content_type));
+            write_content_length(&res, st.st_size);
+            write_response_end_header(&res);
+
+            int nread;
+            char buffer[2048];
+            while ((nread = read(ffd, buffer, 2048)) != 0) {
+                if (nread == -1) {
+                    printf("read error: %s\n", strerror(errno));
+                    if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                        printf("response send error: %s\n", strerror(errno));
+                    }
+                    close(ffd);
+                    return;
+                }
+                write_response_body(&res, buffer, nread);
+            }
+            if (write_response_end(fd, &res) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
         }
     } else if (match_uri(r, "/user-agent")) {
         int user_agent_len;
