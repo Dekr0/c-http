@@ -245,10 +245,11 @@ void router(int fd, struct http_request *r) {
                 return;
                 close(ffd);
             }
+            printf("%d\n", content_length);
             content_length -= nflush;
 
             /** Unsafe */
-            int nread;
+            int nread = 0;
             char buffer[READ_SIZE];
             while (content_length > 0) {
                 memset(buffer, 0, READ_SIZE * sizeof(char));
