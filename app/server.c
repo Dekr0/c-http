@@ -1,13 +1,16 @@
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
+#include "http.h"
 #include "ip.h"
 #include "http_parser.h"
 
@@ -17,7 +20,7 @@
 #define READ_SIZE 3
 
 
-int http_request_reader(int, struct http_request **);
+int http_request_reader(int, struct http_request *);
 
 void router(int, struct http_request *);
 
@@ -99,12 +102,18 @@ int main(void)
         if (!fork()) {
             close(server_fd);
             /** Handling */
-            struct http_request *r;
+            struct http_request r = { 0 };
+            if (!init_http_request(&r)) {
+                if (send(client_fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                    printf("response send error: %s\n", strerror(errno));
+                }
+                exit(1);
+            }
+
             rcode = http_request_reader(client_fd, &r);
             if (rcode) {
-                router(client_fd, r);
+                router(client_fd, &r);
             }
-            free_http_request(r);
             close(client_fd);
             exit(0);
         }
@@ -117,43 +126,11 @@ int main(void)
     return 0;
 }
 
-int http_request_reader(int fd, struct http_request **r) {
-    char *buffer = NULL;
-    int rcode = 0, nrecv = 0, trecv = 0;
-
-    /** Malloc */
-    buffer = malloc(READ_SIZE * sizeof(char));
-    if (buffer == NULL) {
-        printf("buffer malloc error\n");
-        if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
-            printf("response send error: %s\n", strerror(errno));
-        }
-        return 0;
-    }
+int http_request_reader(int fd, struct http_request *r) {
+    char buffer[READ_SIZE] = { 0 };
     memset(buffer, 0, READ_SIZE * sizeof(char));
 
-    *r = malloc(sizeof(struct http_request));
-    if (r == NULL) {
-        printf("http request malloc error\n");
-        if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
-            printf("response send error: %s\n", strerror(errno));
-        }
-        safe_free(buffer);
-        return 0;
-    }
-    memset(*r, 0, sizeof(struct http_request));
-
-    (*r)->__buf_cap = HTTP_REQUEST_HEADER_SIZE;
-    (*r)->__buf = malloc(HTTP_REQUEST_HEADER_SIZE * sizeof(char));
-    if ((*r)->__buf == NULL) {
-        printf("http request buffer malloc error\n");
-        if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
-            printf("response send error: %s\n", strerror(errno));
-        }
-        safe_free(buffer);
-        return 0;
-    }
-    memset((*r)->__buf, 0, HTTP_REQUEST_HEADER_SIZE);
+    int rcode = 0, nrecv = 0, trecv = 0;
 
     /* Receiver HTTP request header */
     while (1) {
@@ -163,7 +140,6 @@ int http_request_reader(int fd, struct http_request **r) {
             if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
                 printf("response send error: %s\n", strerror(errno));
             }
-            safe_free(buffer);
             return 0;
         }
 
@@ -172,22 +148,18 @@ int http_request_reader(int fd, struct http_request **r) {
             if ((send(fd, HTTP_413_R, strlen(HTTP_413_R), 0)) == -1) {
                 printf("response send error: %s\n", strerror(errno));
             }
-            safe_free(buffer);
             return 0;
         }
 
-        rcode = parse_http_request(*r, buffer, nrecv, trecv);
+        rcode = parse_http_request(r, buffer, nrecv, trecv);
         if (rcode == -1) {
             if ((send(fd, HTTP_400_R, strlen(HTTP_400_R), 0)) == -1) {
                 printf("response send error: %s\n", strerror(errno));
             }
-            safe_free(buffer);
             return 0;
         }
         if (rcode > 0) break;
     }
-
-    free(buffer);
 
     return 1;
 }
@@ -198,23 +170,17 @@ void router(int fd, struct http_request *r) {
             printf("response send error: %s\n", strerror(errno));
         }
     } else if (match_uri_prefix(r, "/echo/")) {
-        int rsrc_len;
-        char * rsrc;
-        if ((rsrc_len = get_rsrc(r, &rsrc)) == -1) {
-            printf("rsrc malloc error\n");
-            if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
-                printf("response send error: %s\n", strerror(errno));
-            }
-            return;
-        }
+        int  rsrc_len;
+        char rsrc[64];
+        memset(rsrc, 0, 64 * sizeof(char));
+        rsrc_len = get_rsrc(r, rsrc);
 
         struct http_response res = { 0 };
         if (!init_http_response(r, &res)) {
-            printf("http response malloc error: %s\n", strerror(errno));
+            printf("http response init error");
             if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
                 printf("response send error: %s\n", strerror(errno));
             }
-            safe_free(rsrc);
             return;
         }
 
@@ -222,19 +188,39 @@ void router(int fd, struct http_request *r) {
         write_response_header(&res, "Content-Type", "text/plain",
                 strlen("text/plain"));
         write_content_length(&res, rsrc_len);
+        write_response_end_header(&res);
         write_response_body(&res, rsrc, rsrc_len);
         if (write_response_end(fd, &res) == -1) {
-            printf("http response error: %s\n", strerror(errno));
+            printf("response send error: %s\n", strerror(errno));
+        }
+    } else if (match_uri_prefix(r, "/files/")) {
+        char filename[64];
+        memset(filename, 0, 64 * sizeof(char));
+        if (get_rsrc(r, filename) == 0) {
+            if (send(fd, HTTP_404_R, strlen(HTTP_404_R), 0) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+            return;
         }
 
-        free_http_response(&res);
-        safe_free(rsrc);
-    } else if (match_uri(r, "/user-agent")) {
-        int user_agent_len;
-        char *user_agent;
-        if ((user_agent_len = get_header(r, "User-Agent", &user_agent)) == -1) {
-            printf("user_agent malloc error\n");
-            if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+        char path[128];
+        memset(path, 0, 128 * sizeof(char));
+        sprintf(path, "/tmp/%s", filename);
+
+        struct stat st;
+
+        if (stat(path, &st) == -1) {
+            printf("stat error: %s\n", strerror(errno));
+            if (send(fd, HTTP_404_R, strlen(HTTP_404_R), 0) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+            return;
+        }
+
+        int ffd = open(path, O_RDONLY, 0);
+        if (ffd == -1) {
+            printf("open error: %s\n", strerror(errno));
+            if (send(fd, HTTP_404_R, strlen(HTTP_404_R), 0) == -1) {
                 printf("response send error: %s\n", strerror(errno));
             }
             return;
@@ -242,11 +228,48 @@ void router(int fd, struct http_request *r) {
 
         struct http_response res = { 0 };
         if (!init_http_response(r, &res)) {
-            printf("http response malloc error: %s\n", strerror(errno));
+            printf("http response init error");
             if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
                 printf("response send error: %s\n", strerror(errno));
             }
-            safe_free(user_agent);
+            return;
+        }
+
+        const char *content_type = "application/octet-stream";
+        write_response_status(&res, "200", "OK");
+        write_response_header(&res, "Content-Type", content_type,
+                strlen(content_type));
+        write_content_length(&res, st.st_size);
+        write_response_end_header(&res);
+
+        int nread;
+        char buffer[2048];
+        while ((nread = read(ffd, buffer, 2048)) != 0) {
+            if (nread == -1) {
+                printf("read error: %s\n", strerror(errno));
+                if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                    printf("response send error: %s\n", strerror(errno));
+                }
+                close(ffd);
+                return;
+            }
+            write_response_body(&res, buffer, nread);
+        }
+        if (write_response_end(fd, &res) == -1) {
+            printf("response send error: %s\n", strerror(errno));
+        }
+    } else if (match_uri(r, "/user-agent")) {
+        int user_agent_len;
+        char user_agent[64];
+        memset(user_agent, 0, 64 * sizeof(char));
+        user_agent_len = get_header(r, "User-Agent", user_agent);
+
+        struct http_response res = { 0 };
+        if (!init_http_response(r, &res)) {
+            printf("http response init error");
+            if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
             return;
         }
 
@@ -254,13 +277,11 @@ void router(int fd, struct http_request *r) {
         write_response_header(&res, "Content-Type", "text/plain",
                 strlen("text/plain"));
         write_content_length(&res, user_agent_len);
+        write_response_end_header(&res);
         write_response_body(&res, user_agent, user_agent_len);
         if (write_response_end(fd, &res) == -1) {
-            printf("http response error: %s\n", strerror(errno));
+            printf("response send error: %s\n", strerror(errno));
         }
-
-        free_http_response(&res);
-        safe_free(user_agent);
     } else {
         printf("miss match\n");
         if (send(fd, HTTP_404_R, strlen(HTTP_404_R), 0) == -1) {

@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 
@@ -7,15 +6,10 @@
 #include "type.h"
 
 
-int __get_slice(const struct __http_slice *s, const char *b, char **dest) {
+int __get_slice(const struct __http_slice *s, const char *b, char *dest) {
     const u16 len = s->end - s->beg + 2; 
 
-    *dest = malloc(len * sizeof(char));
-    if (*dest == NULL) {
-        return -1;
-    }
-    memset(*dest, 0, len * sizeof(char));
-    memcpy(*dest, b + s->beg, len - 1);
+    memcpy(dest, b + s->beg, len - 1);
 
     return len - 1;
 }
@@ -45,26 +39,26 @@ u8 __match_slice_prefix(const struct __http_slice *s, const char *b,
     return i;
 }
 
-int get_header(const struct http_request *r, const char *name, char **val) {
+int get_header(const struct http_request *r, const char *name, char *val) {
     const int i = has_header(r, name);
     if (i == -1) return 0;
 
     return __get_slice(&r->headers[i].val, r->__buf, val);
 }
 
-int get_method(const struct http_request *r, char **method) {
+int get_method(const struct http_request *r, char *method) {
     return __get_slice(&r->method, r->__buf, method);
 }
 
-int get_uri(const struct http_request *r, char **uri) {
+int get_uri(const struct http_request *r, char *uri) {
     return __get_slice(&r->uri, r->__buf, uri);
 }
 
-int get_rsrc(const struct http_request *r, char **rsrc) {
+int get_rsrc(const struct http_request *r, char *rsrc) {
     struct __http_slice s = { 0 };
 
     if (r->uri.beg == r->uri.end && r->__buf[r->uri.beg] == '/') {
-        *rsrc = "";
+        rsrc = "";
         return 0; 
     };
 
@@ -98,24 +92,24 @@ u8 match_uri_prefix(const struct http_request *r, const char *prefix) {
     return __match_slice_prefix(&r->uri, r->__buf, prefix);
 }
 
-void free_http_request(struct http_request *r) {
-    if (r != NULL) {
-        if (r->__buf != NULL) {
-            free(r->__buf);
-        }
-        free(r);
-    }
+void free_http_request(struct http_request *r) { }
+
+int init_http_request(struct http_request *r) {
+    memset(r, 0, sizeof(struct http_request));
+    memset(r->__buf, 0, HTTP_REQUEST_HEADER_SIZE * sizeof(char));
+    r->__buf_cap = HTTP_REQUEST_HEADER_SIZE;
+    return 1;
 }
 
 int init_http_response(struct http_request *req, struct http_response *res) {
-    res->__buf = malloc(HTTP_RESPONSE_SIZE * sizeof(char));
-    if (res->__buf == NULL) {
-        return 0;
-    }
+    memset(res, 0, sizeof(struct http_response));
     memset(res->__buf, 0, HTTP_RESPONSE_SIZE * sizeof(char));
+
     res->__cursor = 0;
 
     char src[16];
+    memset(src, 0, 16 * sizeof(char));
+
     sprintf(src, "HTTP/%d.%d ", req->ver_maj, req->ver_min);
     memcpy(res->__buf + res->__cursor, src, strlen(src));
     res->__cursor += strlen(src);
@@ -156,25 +150,24 @@ void write_response_header(struct http_response *r, const char * name,
 
 void write_content_length(struct http_response *r, const int len) {
     char content_length[16];
+    memset(content_length, 0, 16 * sizeof(char));
+
     sprintf(content_length, "%d", len);
     write_response_header(r, "Content-Length", content_length, 
             strlen(content_length));
 }
 
-void write_response_body(struct http_response *r, const char *body, 
-        const size_t size) {
+void write_response_end_header(struct http_response *r) {
     memcpy(r->__buf + r->__cursor, CRLF, strlen(CRLF));
     r->__cursor += strlen(CRLF);
+}
+
+void write_response_body(struct http_response *r, const char *body, 
+        const size_t size) {
     memcpy(r->__buf + r->__cursor, body, size);
     r->__cursor += size;
 }
 
 int write_response_end(int fd, struct http_response *r) {
     return send(fd, r->__buf, r->__cursor, 0);
-}
-
-void free_http_response(struct http_response *r) {
-    if (r != NULL && r->__buf != NULL) {
-        free(r->__buf);
-    }
 }

@@ -57,7 +57,7 @@ struct http_request {
     u8     ver_maj;            // 8
     u8     ver_min;            // 8
     u8     header_count;       // 8
-    char  *__buf;              // 32
+    char   __buf[HTTP_REQUEST_HEADER_SIZE]; // 32
     size_t __buf_cap;          // 64
     struct __http_slice  method; // 32
     struct __http_slice  uri;    // 32
@@ -72,16 +72,16 @@ struct http_header {
 
 struct http_response {
     u32    __cursor;
-    char * __buf;
+    char   __buf[HTTP_RESPONSE_SIZE];
 };
 
-int get_header(const struct http_request *, const char *, char **) ;
+int get_header(const struct http_request *, const char *, char *) ;
 
-int get_method(const struct http_request *, char **);
+int get_method(const struct http_request *, char *);
 
-int get_rsrc(const struct http_request *, char **);
+int get_rsrc(const struct http_request *, char *);
 
-int get_uri(const struct http_request *, char **);
+int get_uri(const struct http_request *, char *);
 
 int has_header(const struct http_request *, const char *);
 
@@ -90,6 +90,8 @@ u8 match_method(const struct http_request *, const char *);
 u8 match_uri(const struct http_request *, const char *);
 
 u8 match_uri_prefix(const struct http_request *, const char *);
+
+int init_http_request(struct http_request *);
 
 void free_http_request(struct http_request *);
 
@@ -107,6 +109,8 @@ void write_response_status(struct http_response *, const char *, const char *);
 void write_response_header(struct http_response *, const char *, const char *, const size_t);
 
 void write_content_length(struct http_response *, const int);
+
+void write_response_end_header(struct http_response *);
 
 void write_response_body(struct http_response *, const char *, const size_t);
 
