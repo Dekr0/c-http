@@ -15,4 +15,15 @@ detect any memory leak when it's running in `leak-check=full`.
     - Memory allocation and recycle should be done in higher up of call stack 
     instead of deeper call stack because passing pointer around can become tricky
     , and allocation might be forgotten to recycle.
-    
+
+- Memory efficiency is also another concern I have. There are char array (string)
+being allocated across different places for convenience. There are a mix of 
+heap allocation and stack allocation.
+
+- For the current scope of this HTTP server, it should utilize stack memory more 
+instead constantly allocate it from heap and recycle it. Heap is slow and system 
+call for heap is slow as well.
+
+- Units test is a must have since there are so many places will go wrong.
+
+- Ensure each module is unit test thoroughly before hook them up together.
