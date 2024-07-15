@@ -36,7 +36,7 @@ u8 __match_slice_prefix(const struct __http_slice *s, const char *b,
     for (i = 0; i < len_b; i++) {
         if (b[s->beg + i] != p[i]) return 0;
     }
-    return i;
+    return s->beg + i;
 }
 
 int get_header(const struct http_request *r, const char *name, char *val) {
@@ -52,6 +52,16 @@ int get_method(const struct http_request *r, char *method) {
 
 int get_uri(const struct http_request *r, char *uri) {
     return __get_slice(&r->uri, r->__buf, uri);
+}
+
+int get_rsrc_prefix(const struct http_request *r, char *rsc, const char *p) {
+    struct __http_slice s = { 0 };
+    if ((s.beg = !match_uri_prefix(r, p)) == 0) {
+        rsc = "";
+        return 0;
+    }
+    s.end = r->uri.end;
+    return __get_slice(&s, r->__buf, rsc);
 }
 
 int get_rsrc(const struct http_request *r, char *rsrc) {

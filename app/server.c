@@ -205,7 +205,7 @@ void router(int fd, struct http_request *r) {
 
         char path[128];
         memset(path, 0, 128 * sizeof(char));
-        sprintf(path, "/tmp/%s", filename);
+        sprintf(path, "/tmp/data/codecrafters.io/http-server-tester/%s", filename);
 
         struct stat st;
 

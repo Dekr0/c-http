@@ -81,6 +81,8 @@ int get_method(const struct http_request *, char *);
 
 int get_rsrc(const struct http_request *, char *);
 
+int get_rsrc_prefix(const struct http_request *, char *, const char *);
+
 int get_uri(const struct http_request *, char *);
 
 int has_header(const struct http_request *, const char *);
