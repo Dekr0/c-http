@@ -24,6 +24,8 @@
 
 #define HTTP_200   "HTTP/1.1 200 OK\r\n"
 #define HTTP_200_R "HTTP/1.1 200 OK\r\n\r\n"
+#define HTTP_201   "HTTP/1.1 201 Created\r\n"
+#define HTTP_201_R "HTTP/1.1 201 Created\r\n\r\n"
 #define HTTP_400   "HTTP/1.1 400 Bad Request\r\n"
 #define HTTP_400_R "HTTP/1.1 400 Bad Request\r\n\r\n"
 #define HTTP_404   "HTTP/1.1 404 Not Found\r\n"
@@ -86,6 +88,8 @@ int get_rsrc_prefix(const struct http_request *, char *, const char *);
 int get_uri(const struct http_request *, char *);
 
 int has_header(const struct http_request *, const char *);
+
+int flush(const struct http_request *r, int fd);
 
 u8 match_method(const struct http_request *, const char *);
 

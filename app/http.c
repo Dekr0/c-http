@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include "http.h"
 #include "type.h"
@@ -37,6 +38,12 @@ u8 __match_slice_prefix(const struct __http_slice *s, const char *b,
         if (b[s->beg + i] != p[i]) return 0;
     }
     return s->beg + i;
+}
+
+int flush(const struct http_request *r, int fd) {
+    const int nflush = write(fd, r->__buf + r->__lead + 1, 
+            strlen(r->__buf + r->__lead + 1));
+    return nflush;
 }
 
 int get_header(const struct http_request *r, const char *name, char *val) {
