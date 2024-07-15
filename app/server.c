@@ -138,6 +138,7 @@ int http_request_reader(int fd, struct http_request *r) {
         memset(buffer, 0, READ_SIZE * sizeof(char));
         nrecv = recv(fd, buffer, READ_SIZE, 0);
         if (nrecv == -1) {
+            printf("recv error: %s\n", strerror(errno));
             if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
                 printf("response send error: %s\n", strerror(errno));
             }
@@ -160,6 +161,46 @@ int http_request_reader(int fd, struct http_request *r) {
             return 0;
         }
         if (rcode > 0) break;
+    }
+
+    char content_length_str[16];
+    memset(content_length_str, 0, sizeof(char) * 16);
+    if (!get_header(r, "Content-Length", content_length_str)) {
+        return 1;
+    }
+    int content_length = strtol(content_length_str, NULL, 10);
+    if (!content_length) {
+        return 1;
+    }
+    r->content_length = content_length;
+
+    // Part of body might remain in buffer
+    int nflush = 0;
+    while (r->__lead < r->__buf_cap && r->__buf[r->__lead] != '\0') {
+        nflush++;
+        r->__lead++;
+    }
+    content_length -= nflush;
+
+    while (content_length > 0) {
+        memset(buffer, 0, READ_SIZE * sizeof(char));
+        nrecv = recv(fd, buffer, 
+                READ_SIZE > content_length ? content_length : READ_SIZE, 0);
+        if (nrecv == -1) {
+            printf("recv error: %s\n", strerror(errno));
+            if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+            return 0;
+        }
+        if (!write_http_request_body(r, buffer, nrecv)) {
+            printf("HTTP request header exceed maximum size\n");
+            if ((send(fd, HTTP_413_R, strlen(HTTP_413_R), 0)) == -1) {
+                printf("response send error: %s\n", strerror(errno));
+            }
+            return 0;
+        }
+        content_length -= nrecv;
     }
 
     return 1;
@@ -196,25 +237,16 @@ void router(int fd, struct http_request *r) {
         }
     } else if (match_uri_prefix(r, "/files/")) {
         if (match_method(r, "POST")) {
-            char filename[64];
-            memset(filename, 0, 64 * sizeof(char));
-            if (get_rsrc(r, filename) == 0) {
-                if (send(fd, HTTP_400_R, strlen(HTTP_400_R), 0) == -1) {
-                    printf("response send error: %s\n", strerror(errno));
-                }
-                return;
-            }
-            char content_length_str[16];
-            memset(content_length_str, 0, 16 * sizeof(char));
-            if (get_header(r, "Content-Length", content_length_str) == 0) {
-                if (send(fd, HTTP_400_R, strlen(HTTP_400_R), 0) == -1) {
+            if (r->content_length == 0) {
+                if (send(fd, HTTP_201_R, strlen(HTTP_201_R), 0) == -1) {
                     printf("response send error: %s\n", strerror(errno));
                 }
                 return;
             }
 
-            u32 content_length = strtol(content_length_str, NULL, 10);
-            if (content_length == 0) {
+            char filename[64];
+            memset(filename, 0, 64 * sizeof(char));
+            if (get_rsrc(r, filename) == 0) {
                 if (send(fd, HTTP_400_R, strlen(HTTP_400_R), 0) == -1) {
                     printf("response send error: %s\n", strerror(errno));
                 }
@@ -225,8 +257,6 @@ void router(int fd, struct http_request *r) {
             memset(path, 0, 128 * sizeof(char));
             sprintf(path, "%s/%s", TMP, filename);
 
-            printf("%s\n", path);
-
             int ffd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0777);
             if (ffd == -1) {
                 printf("open error: %s\n", strerror(errno));
@@ -236,41 +266,15 @@ void router(int fd, struct http_request *r) {
                 return;
             }
 
-            const int nflush = flush(r, ffd);
-            if (nflush == -1) {
+            if (write_body(r, ffd) == -1) {
                 printf("write error: %s\n", strerror(errno));
                 if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
                     printf("response send error: %s\n", strerror(errno));
                 }
-                return;
                 close(ffd);
+                return;
             }
-            content_length -= nflush;
 
-            /** Unsafe */
-            int nread = 0;
-            char buffer[READ_SIZE];
-            while (content_length > 0) {
-                memset(buffer, 0, READ_SIZE * sizeof(char));
-                nread = recv(fd, buffer, content_length, 0);
-                if (nread == -1) {
-                    printf("recv error: %s\n", strerror(errno));
-                    if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
-                        printf("response send error: %s\n", strerror(errno));
-                    }
-                    close(ffd);
-                    break;
-                }
-                if (write(ffd, buffer, nread) == -1) {
-                    printf("write error: %s\n", strerror(errno));
-                    if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
-                        printf("response send error: %s\n", strerror(errno));
-                    }
-                    close(ffd);
-                    break;
-                }
-                content_length -= nread;
-            }
             close(ffd);
             if (send(fd, HTTP_201_R, strlen(HTTP_201_R), 0) == -1) {
                 printf("response send error: %s\n", strerror(errno));

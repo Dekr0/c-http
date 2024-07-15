@@ -40,10 +40,8 @@ u8 __match_slice_prefix(const struct __http_slice *s, const char *b,
     return s->beg + i;
 }
 
-int flush(const struct http_request *r, int fd) {
-    const int nflush = write(fd, r->__buf + r->__lead + 1, 
-            strlen(r->__buf + r->__lead + 1));
-    return nflush;
+int write_body(const struct http_request *r, int fd) {
+    return write(fd, r->__buf + r->__tail, r->content_length * sizeof(char));
 }
 
 int get_header(const struct http_request *r, const char *name, char *val) {

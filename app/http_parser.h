@@ -15,5 +15,9 @@
  */
 int parse_http_request(struct http_request *, const char *, size_t, size_t);
 
+int http_request_body_readable(struct http_request *, const int);
+
+int write_http_request_body(struct http_request *, const char *, const size_t);
+
 
 #endif

@@ -267,6 +267,7 @@ int parse_http_request(struct http_request *r, const char *buffer,
                             r->__state, r->__lead, c, c);
                     return -1;
                 }
+                r->__lead++;
                 r->__tail = r->__lead;
                 return r->__lead;
         }
@@ -281,4 +282,15 @@ int parse_http_request(struct http_request *r, const char *buffer,
     }
 
     return -1;
+}
+
+int write_http_request_body(struct http_request *r, const char * b, 
+        const size_t nrecv) {
+    if (r->__lead + nrecv > r->__buf_cap) {
+        // Future -> realloc
+        return 0;
+    }
+    memcpy(r->__buf + r->__lead, b, nrecv);
+    r->__lead += nrecv;
+    return 1;
 }

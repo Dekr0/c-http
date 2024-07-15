@@ -59,6 +59,7 @@ struct http_request {
     u8     ver_maj;            // 8
     u8     ver_min;            // 8
     u8     header_count;       // 8
+    u32    content_length;
     char   __buf[HTTP_REQUEST_HEADER_SIZE]; // 32
     size_t __buf_cap;          // 64
     struct __http_slice  method; // 32
@@ -76,6 +77,8 @@ struct http_response {
     u32    __cursor;
     char   __buf[HTTP_RESPONSE_SIZE];
 };
+
+int write_body(const struct http_request *, int);
 
 int get_header(const struct http_request *, const char *, char *) ;
 
