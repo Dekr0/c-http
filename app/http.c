@@ -41,7 +41,6 @@ u8 __match_slice_prefix(const struct __http_slice *s, const char *b,
 }
 
 int flush(const struct http_request *r, int fd) {
-    printf("%zu\n", strlen(r->__buf + r->__lead + 1));
     const int nflush = write(fd, r->__buf + r->__lead + 1, 
             strlen(r->__buf + r->__lead + 1));
     return nflush;

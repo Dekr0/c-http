@@ -227,7 +227,7 @@ void router(int fd, struct http_request *r) {
 
             printf("%s\n", path);
 
-            int ffd = open(path, O_RDWR | O_CREAT | O_TRUNC);
+            int ffd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0777);
             if (ffd == -1) {
                 printf("open error: %s\n", strerror(errno));
                 if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
@@ -236,7 +236,6 @@ void router(int fd, struct http_request *r) {
                 return;
             }
 
-            printf("%d\n", content_length);
             const int nflush = flush(r, ffd);
             if (nflush == -1) {
                 printf("write error: %s\n", strerror(errno));
@@ -246,7 +245,6 @@ void router(int fd, struct http_request *r) {
                 return;
                 close(ffd);
             }
-            printf("%d\n", content_length);
             content_length -= nflush;
 
             /** Unsafe */
@@ -255,7 +253,6 @@ void router(int fd, struct http_request *r) {
             while (content_length > 0) {
                 memset(buffer, 0, READ_SIZE * sizeof(char));
                 nread = recv(fd, buffer, content_length, 0);
-                printf("bytes read: %d\n", nread);
                 if (nread == -1) {
                     printf("recv error: %s\n", strerror(errno));
                     if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
