@@ -227,7 +227,7 @@ void router(int fd, struct http_request *r) {
 
             printf("%s\n", path);
 
-            int ffd = open(path, O_WRONLY |O_CREAT| O_TRUNC);
+            int ffd = open(path, O_RDWR |O_CREAT| O_TRUNC);
             if (ffd == -1) {
                 printf("open error: %s\n", strerror(errno));
                 if (send(fd, HTTP_500_R, strlen(HTTP_500_R), 0) == -1) {
