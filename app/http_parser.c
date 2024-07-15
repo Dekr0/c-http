@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "http_parser.h"
+#include "http.h"
 #include "type.h"
 
 
@@ -266,6 +267,7 @@ int parse_http_request(struct http_request *r, const char *buffer,
                             r->__state, r->__lead, c, c);
                     return -1;
                 }
+                r->__tail = r->__lead;
                 return r->__lead;
         }
         r->__lead += 1;
