@@ -11,4 +11,4 @@
     - provide a set of helper function for extracting different parts of a HTTP request instead of manually
     navigating the buffer
     - provide simple dynamic endpoint routing
-    - optimiz HTTP server performance under extreme high load (target 20 millions concurrent client connection)
+    - optimiz HTTP server performance under extreme high load (target: ??? request / seconds)
